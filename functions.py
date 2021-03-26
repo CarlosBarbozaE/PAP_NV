@@ -1,8 +1,16 @@
-
 import numpy as np
+import pandas as pd
 from enum import Enum
+import matplotlib as mt
 import matplotlib.pyplot as plt
+import tti
+from tti.indicators import StochasticMomentumIndex as smi
+from tti.indicators import _moving_average_convergence_divergence as macd
+from tti.indicators import RelativeStrengthIndex as rsi
 import data as dt
+import datetime as dat
+from scipy.signal import argrelextrema
+import statistics as st
 
 
 class ActionColorMapping(Enum):
@@ -51,7 +59,7 @@ def data_not_available(price):
     return np.isnan(price)
 
 
-def calculate_moving_average_crossovers(symbol):
+def estrategia_promediosm(symbol):
     closing_price = retrieve_closing_price(symbol)
 
     rm_20 = closing_price.rolling(window=20).mean()
@@ -60,6 +68,8 @@ def calculate_moving_average_crossovers(symbol):
     action = ActionColorMapping.SELL
     signal_detected = sell()
     signals = []
+    buy_signal = []
+    sell_signal = []
 
     for index in range(closing_price.size):
         if data_not_available(rm_20[index]) or data_not_available(rm_100[index]):
@@ -73,54 +83,144 @@ def calculate_moving_average_crossovers(symbol):
         if rm_20[index] >= rm_100[index]:
             action = ActionColorMapping.SELL
             signal_detected = sell()
+            buy_signal.append(index)
         else:
             action = ActionColorMapping.BUY
             signal_detected = buy()
-    plot(closing_price, rm_20, rm_100, signals)
-    
-    
-def rsi(symbol):
+            sell_signal.append(index)
+    return buy_signal, sell_signal, signals, closing_price, rm_20, rm_100
+
+
+def estrategia_mm(symbol):
+    """
+    :param symbol: Este es el activo que el usuario decida.
+    :return: Senales tanto de venta como de compra, asi como las fechas de ambas posiciones.
+    """
     df = dt.precios.get(symbol)
-    n = 14  # len(df)
-    i = 0
-    upi = [0]
-    doi = [0]
-    while i + 1 <= df.index[-1]:
-        upmove = df['High'][i + 1] - df['High'][i]
-        domove = df['Low'][i] - df['Low'][i + 1]
-        if upmove > domove and upmove > 0:
-            upd = upmove
+
+    date = []
+    price = []
+    value = []
+    for position in estrategia_promediosm(symbol)[2]:
+        date.append(position.date)
+        price.append(position.price)
+        value.append(position.action.value)
+
+    venta = []
+    venta_fech = []
+    compra = []
+    compra_fech = []
+    for n in range(len(value)):
+        if value[n] == 'red':
+            venta.append(price[n])
+            venta_fech.append(date[n])
+        elif value[n] == 'green':
+            compra.append(price[n])
+            compra_fech.append(date[n])
+
+    lista_buy = []
+    lista_sell = []
+    for i in compra_fech:
+        lista_buy.append(df['Date'][i])
+
+    for i in venta_fech:
+        lista_sell.append(df['Date'][i])
+
+    return compra, venta, lista_buy, lista_sell
+
+
+def fechas_precios_orden(symbol, estrategia):
+    """
+    :param symbol: Este es el activo que el usuario decida.
+    :param estrategia:
+    :return:
+    """
+    precios = dt.precios.get(symbol)
+
+    if estrategia == 'promedios':
+        p1 = estrategia_mm(symbol)[2]
+        p2 = estrategia_mm(symbol)[3]
+        fecha_compra = estrategia_mm(symbol)[2]
+        fecha_venta = estrategia_mm(symbol)[3]
+    elif estrategia == 'smi':
+        p1 = estrategia_smi(symbol)[2]
+        p2 = estrategia_smi(symbol)[3]
+        fecha_compra = estrategia_smi(symbol)[2]
+        fecha_venta = estrategia_smi(symbol)[3]
+    fechasc = []
+    preciosc = []
+    counter = 0
+    for i in range(len(precios['Date'])):
+        if counter <= len(p1) - 1:
+            if p1[counter] == precios['Date'][i]:
+                fechasc.append(p1[counter])
+                preciosc.append(precios['Close'][i])
+                counter += 1
+            else:
+                fechasc.append(np.nan)
+                preciosc.append(np.nan)
         else:
-            upd = 0
-        upi.append(upd)
-        if domove > upmove and domove > 0:
-            dod = domove
+            fechasc.append(np.nan)
+            preciosc.append(np.nan)
+
+    fechasv = []
+    preciosv = []
+    counterv = 0
+    for i in range(len(precios['Date'])):
+        if counterv <= len(p2) - 1:
+            if p2[counterv] == precios['Date'][i]:
+                fechasv.append(p2[counterv])
+                preciosv.append(precios['Close'][i])
+                counterv += 1
+            else:
+                fechasv.append(np.nan)
+                preciosv.append(np.nan)
         else:
-            dod = 0
-        doi.append(dod)
-        i = i + 1
-    upi = pd.Series(upi)
-    doi = pd.Series(doi)
-    posdi = pd.Series(pd.Series.ewm(upi, span=n, min_periods=n - 1).mean())
-    negdi = pd.Series(pd.Series.ewm(doi, span=n, min_periods=n - 1).mean())
-    RSI = pd.Series(posdi / (posdi + negdi), name='RSI_' + str(n))
-    df = df.join(RSI)
-    df.set_index('Date', inplace=True)
-    x = range(len(df.index))
-    fig = plt.figure(figsize=(16, 8))
-    gs = mt.gridspec.GridSpec(2, 1, figure=fig, height_ratios=[3, 1])
-    ax1 = plt.subplot(gs[0])
-    plt.plot(x, df.Close)
-    plt.grid(True)
-    plt.title('RSI_' + str(symbol))
-    ax2 = plt.subplot(gs[1], sharex=ax1)
-    plt.plot(x, df.RSI_14, color='r')
-    plt.axhline(y=0.7, color='k', linestyle='--')
-    plt.axhline(y=0.3, color='k', linestyle='--')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-    return df
+            fechasv.append(np.nan)
+            preciosv.append(np.nan)
+    return preciosc, preciosv, fecha_compra, fecha_venta
+
+
+# def rsi_manual(symbol):
+#     df = dt.precios.get(symbol)
+#     n = 14  # len(df)
+#     i = 0
+#     upi = [0]
+#     doi = [0]
+#     while i + 1 <= df.index[-1]:
+#         upmove = df['High'][i + 1] - df['High'][i]
+#         domove = df['Low'][i] - df['Low'][i + 1]
+#         if upmove > domove and upmove > 0:
+#             upd = upmove
+#         else:
+#             upd = 0
+#         upi.append(upd)
+#         if domove > upmove and domove > 0:
+#             dod = domove
+#         else:
+#             dod = 0
+#         doi.append(dod)
+#         i = i + 1
+#     upi = pd.Series(upi)
+#     doi = pd.Series(doi)
+#     posdi = pd.Series(pd.Series.ewm(upi, span=n, min_periods=n - 1).mean())
+#     negdi = pd.Series(pd.Series.ewm(doi, span=n, min_periods=n - 1).mean())
+#     RSI = pd.Series(posdi / (posdi + negdi), name='RSI_' + str(n))
+#     df = df.join(RSI)
+#     df.set_index('Date', inplace=True)
+#     x = range(len(df.index))
+#     fig = plt.figure(figsize=(16, 8))
+#     gs = mt.gridspec.GridSpec(2, 1, figure=fig, height_ratios=[3, 1])
+#     plt.plot(x, df.Close)
+#     plt.grid(True)
+#     plt.title('RSI_' + str(symbol))
+#     plt.plot(x, df.RSI_14, color='r')
+#     plt.axhline(y=0.7, color='k', linestyle='--')
+#     plt.axhline(y=0.3, color='k', linestyle='--')
+#     plt.legend()
+#     plt.grid(True)
+#     plt.show()
+#     return df
 
 
 def soporteresistencia(symbol):
@@ -131,10 +231,9 @@ def soporteresistencia(symbol):
     df = dt.precios.get(symbol)
     data = df.set_index('Date')
 
-    pivot = []  # Se inicializa la variable pivot, aqui se iran pegando los puntos pivote que existan a traves de la historia.
+    pivot = []  # Se inicializa la variable pivot, aqui se iran pegando los puntos pivote que existan en la data.
     dates = []  # Aqui al igual que en pivot, se pegaran las fechas donde fueron los pivotes.
     counter = 0  # Este es un contador que noayudara a saber si el puntos es el maximo
-    lastPivot = 0  # Se inicia en pivot 0, se ira modificando a traves del tiempo.
 
     Range = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # Este rango es para verificar que el punto sea el mas alto.
     dateRange = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -150,7 +249,6 @@ def soporteresistencia(symbol):
 
         if currentMax == max(Range, default=0):
             counter += 1
-
         else:
             counter = 0
 
@@ -201,16 +299,12 @@ def smiventa(symbol):
     """
     df = stochastic(symbol=symbol)[0]
     stoch3 = stochastic(symbol=symbol)[1]
-    stoch12 = stochastic(symbol=symbol)[2]
 
-    numeros_max = []
     y = np.array(stoch3['smi'])
     x = np.linspace(1, len(y), y.size)
 
     peaks_indx = argrelextrema(y, np.greater)[0]
-
-    for p in peaks_indx:
-        numeros_max.append(p)
+    numeros_max = [p for p in peaks_indx]
 
     fechas_max = []
     puntaje_smi_max = []
@@ -240,17 +334,11 @@ def smicompra(symbol):
     """
     df = stochastic(symbol=symbol)[0]
     stoch3 = stochastic(symbol=symbol)[1]
-    stoch12 = stochastic(symbol=symbol)[2]
 
-    numeros_min = []
     y = np.array(stoch3['smi'])
-    # x = np.linspace(1, len(y), y.size)
 
-    # get peaks
     peaks_indx = argrelextrema(y, np.less)[0]
-
-    for p in peaks_indx:
-        numeros_min.append(p)
+    numeros_min = [p for p in peaks_indx]
 
     fechas_min = []
     puntaje_smi_min = []
@@ -273,7 +361,7 @@ def smicompra(symbol):
     return fechasc, puntajec, precioc
 
 
-def smiconjunto(symbol):
+def estrategia_smi(symbol):
     """
     :param symbol:
     :return:
@@ -313,56 +401,57 @@ def smiconjunto(symbol):
 
         else:
             pass
-    return grsventa, grpventa, preciov, grscompra, grpcompra, precioc
+
+    return precioc, preciov, grscompra, grsventa, grpventa, grpcompra
 
 
-def smivisual(symbol):
-    """
-    :param symbol: El ticker que el ussuario decida.
-    :return: Visualmente, te grafica mediante el indicador las senales.
-    """
-    stoch3 = stochastic(symbol)[1]
-    stoch12 = stochastic(symbol)[2]
-    grsventa = smiconjunto(symbol)[0]
-    grpventa = smiconjunto(symbol)[1]
-    grscompra = smiconjunto(symbol)[3]
-    grpcompra = smiconjunto(symbol)[4]
-
-    plt.figure(figsize=(16, 12))
-    plt.plot(stoch3['Date'], stoch3['smi'], label='Smooth 3')
-    plt.plot(stoch12['Date'], stoch12['smi'], label='Smooth 5')
-    plt.scatter(grsventa, grpventa, s=120, c='red', label='Puntos de venta')
-    plt.scatter(grscompra, grpcompra, s=120, c='green', label='Puntos de compra')
-    plt.title('STOCHASTIC MOMENTUM INDEX STRATEGY', size=20)
-    plt.axhline(40, 0, 1)
-    plt.axhline(-40, 0, 1)
-    plt.legend()
-    plt.show()
-
-
-def smiestrategia(symbol):
-    """
-    :param symbol: Es el ticker del activo que se quiere visualizar
-    :return: Grafica en donde aparecen los precios historicos del activo y sus respectivas senales.
-    """
-    # Fijamos los datos que necesitamos para la grafica.
-    # Estos provienen de otras funciones anteriores, como stochastic() y smiconjunto()
-    df = stochastic(symbol=symbol)[0]
-    grsventa = smiconjunto(symbol)[0]
-    preciov = smiconjunto(symbol)[2]
-    grscompra = smiconjunto(symbol)[3]
-    precioc = smiconjunto(symbol)[5]
-
-    plt.figure(figsize=(16, 12))
-    plt.plot(df['Date'], df['Close'], label='Close')
-    plt.scatter(grsventa, preciov, s=120, c='red', label='Puntos de venta')
-    plt.scatter(grscompra, precioc, s=120, c='green', label='Puntos de compra')
-    plt.title('STOCHASTIC MOMENTUM INDEX STRATEGY', size=20)
-    plt.legend()
-    plt.show()
+# def smivisual(symbol):
+#     """
+#     :param symbol: El ticker que el ussuario decida.
+#     :return: Visualmente, te grafica mediante el indicador las senales.
+#     """
+#     stoch3 = stochastic(symbol)[1]
+#     stoch12 = stochastic(symbol)[2]
+#     grsventa = estrategia_smi(symbol)[0]
+#     grpventa = estrategia_smi(symbol)[1]
+#     grscompra = estrategia_smi(symbol)[3]
+#     grpcompra = estrategia_smi(symbol)[4]
+#
+#     plt.figure(figsize=(16, 12))
+#     plt.plot(stoch3['Date'], stoch3['smi'], label='Smooth 3')
+#     plt.plot(stoch12['Date'], stoch12['smi'], label='Smooth 5')
+#     plt.scatter(grsventa, grpventa, s=120, c='red', label='Puntos de venta')
+#     plt.scatter(grscompra, grpcompra, s=120, c='green', label='Puntos de compra')
+#     plt.title('STOCHASTIC MOMENTUM INDEX STRATEGY', size=20)
+#     plt.axhline(40, 0, 1)
+#     plt.axhline(-40, 0, 1)
+#     plt.legend()
+#     plt.show()
 
 
-def macdestrategia(symbol):
+# def smiestrategia(symbol):
+#     """
+#     :param symbol: Es el ticker del activo que se quiere visualizar
+#     :return: Grafica en donde aparecen los precios historicos del activo y sus respectivas senales.
+#     """
+#     # Fijamos los datos que necesitamos para la grafica.
+#     # Estos provienen de otras funciones anteriores, como stochastic() y smiconjunto()
+#     df = stochastic(symbol=symbol)[0]
+#     grsventa = estrategia_smi(symbol)[0]
+#     preciov = estrategia_smi(symbol)[2]
+#     grscompra = estrategia_smi(symbol)[3]
+#     precioc = estrategia_smi(symbol)[5]
+#
+#     plt.figure(figsize=(16, 12))
+#     plt.plot(df['Date'], df['Close'], label='Close')
+#     plt.scatter(grsventa, preciov, s=120, c='red', label='Puntos de venta')
+#     plt.scatter(grscompra, precioc, s=120, c='green', label='Puntos de compra')
+#     plt.title('STOCHASTIC MOMENTUM INDEX STRATEGY', size=20)
+#     plt.legend()
+#     plt.show()
+
+
+def estrategia_macd(symbol):
     """
     :param symbol: El ticker que el usuario decida visualizar y analizar.
     :return: Grafica las senales de venta o compra que analice la estrategia
@@ -388,37 +477,39 @@ def macdestrategia(symbol):
 
     for i in range(0, len(signal)):
         if signal['macd'][i] > signal['signal_line'][i]:
-            # Sell.append(np.nan)
+            Sell.append(np.nan)
             if flag != 1:
                 Buy.append(df['Close'][i])
                 buydate.append(df['Date'][i])
                 flag = 1
             else:
-                pass
-                # Buy.append(np.nan)
+                #  pass
+                Buy.append(np.nan)
         elif signal['macd'][i] < signal['signal_line'][i]:
-            # Buy.append(np.nan)
+            Buy.append(np.nan)
             if flag != 0:
                 Sell.append(df['Close'][i])
                 selldate.append(df['Date'][i])
                 flag = 0
             else:
-                pass
-                # Sell.append(np.nan)
+                #  pass
+                Sell.append(np.nan)
         else:
-            pass
-            # Buy.append(np.nan)
-            # Sell.append(np.nan)
+            #  pass
+            Buy.append(np.nan)
+            Sell.append(np.nan)
 
-    plt.figure(figsize=(12, 8))
-    plt.plot(df['Close'], label='Close Price', alpha=0.35)
-    plt.scatter(selldate, Sell, s=120, c='red', label='Puntos de venta', marker='v', alpha=1)
-    plt.scatter(buydate, Buy, s=120, c='green', label='Puntos de compra', marker='^', alpha=1)
-    plt.title('MACD STRATEGY', size=20)
-    plt.xlabel('Date')
-    plt.ylabel('Close Price ($)')
-    plt.legend(loc='best')
-    plt.show()
+    return Buy, Sell, buydate, selldate
+
+    # plt.figure(figsize=(12, 8))
+    # plt.plot(df['Date'], df['Close'], label='Close Price', alpha=0.35)
+    # plt.scatter(df['Date'], Sell, s=120, c='red', label='Puntos de venta', marker='v', alpha=1)
+    # plt.scatter(df['Date'], Buy, s=120, c='green', label='Puntos de compra', marker='^', alpha=1)
+    # plt.title('MACD STRATEGY', size=20)
+    # plt.xlabel('Date')
+    # plt.ylabel('Close Price ($)')
+    # plt.legend(loc='best')
+    # plt.show()
 
 
 def estrategia_rsi(symbol):
@@ -426,6 +517,7 @@ def estrategia_rsi(symbol):
     :param symbol: Simbolo o ticker que el usuario decidira visualizar.
     :return: Grafica con senales de compra o venta, segun lo indique el indicador.
     """
+
     df = dt.precios.get(symbol)  # Dataframe de precios descargados de yahoo finance
     data = df.set_index('Date')  # Pones la columna Date como index, esto se necesita para la libreria de indicadores
 
@@ -437,35 +529,186 @@ def estrategia_rsi(symbol):
 
     senalventa = []
     puntoventa = []
-    precioventa = []
+    precioventa = [np.nan]
     senalcompra = []
     puntocompra = []
-    preciocompra = []
+    preciocompra = [np.nan]
 
-    for i in range(1, len(df['Date']) - 1):
+    for i in range(1, len(df['Date'])):
 
-        if r7['rsi'][i] > 70 and r14['rsi'][i] > 70:
+        if r7['rsi'][i] > 65 and r14['rsi'][i] > 65:
+            preciocompra.append(np.nan)
             dif1 = float(r7['rsi'][i - 1] - r14['rsi'][i - 1])
             dif2 = float(r7['rsi'][i] - r14['rsi'][i])
 
             if dif1 > 0 and dif2 < 0 or dif1 < 0 and dif2 > 0:
                 senalventa.append(df['Date'][i])
                 puntoventa.append(r7['rsi'][i])
-                precioventa.append(df['close'][i])
+                precioventa.append(df['Close'][i])
+            else:
+                precioventa.append(np.nan)
 
-        elif r7['rsi'][i] < 30 and r14['rsi'][i] < 30:
+        elif r7['rsi'][i] < 35 and r14['rsi'][i] < 35:
+            precioventa.append(np.nan)
             dif1 = float(r7['rsi'][i - 1] - r14['rsi'][i - 1])
             dif2 = float(r7['rsi'][i] - r14['rsi'][i])
 
             if dif1 > 0 and dif2 < 0 or dif1 < 0 and dif2 > 0:
                 senalcompra.append(df['Date'][i])
                 puntocompra.append(r7['rsi'][i])
-                preciocompra.append(df['close'][i])
+                preciocompra.append(df['Close'][i])
+            else:
+                preciocompra.append(np.nan)
 
-    plt.figure(figsize=(16, 12))
-    plt.plot(df['Date'], df['close'], label='Close')
-    plt.scatter(senalventa, precioventa, s=200, c='red', label='Puntos de venta')
-    plt.scatter(senalcompra, preciocompra, s=200, c='green', label='Puntos de compra')
-    plt.title('RSI STRATEGY', size=20)
-    plt.legend()
-    plt.show()
+        else:
+            preciocompra.append(np.nan)
+            precioventa.append(np.nan)
+
+    return preciocompra, precioventa, senalcompra, senalventa
+
+    # plt.figure(figsize=(16, 12))
+    # plt.plot(df['Date'], df['Close'], label='Close')
+    # plt.scatter(senalventa, precioventa, s=120, c='red', label='Puntos de venta')
+    # plt.scatter(senalcompra, preciocompra, s=120, c='green', label='Puntos de compra')
+    # plt.title('RSI STRATEGY', size=20)
+    # plt.legend()
+    # plt.show()
+
+
+def mediana(lista):
+    """
+    :param lista: Se entrega una lista en donde se contegan los valores a los cuales se le quiera sacar la mediana.
+    :return: Mediana de la lista.
+    """
+    med = st.median(lista)  # Libreria de statistics para el calculo de la mediana
+    #  Se deja la mediana en numero entero.
+    return med
+
+
+def contador(symbol, pruebas):
+    """
+    :param pruebas: Estas son las variables que se entregan en cada una de las estrategias (punto de venta o compra)
+    :param symbol: Este es el activo que el usuario quiere visualizar.
+    :return: Regresa dos lista en donde cuenta la duración de cada una de las estrategias.
+    """
+
+    precios = dt.precios.get(symbol)  # Dataframe de precios descargados de yahoo finance
+
+    # lista_buy = np.where(precios['Close'] == pruebas[0])
+    # lista_sell = np.where(precios['Close'] == pruebas[1])
+
+    lista_buy = []
+    for i in range(len(pruebas[2])):
+        for n in range(len(precios['Date'])):
+            if precios['Date'][n] == pruebas[2][i]:
+                lista_buy.append(n)
+
+    lista_sell = []
+    for i in range(len(pruebas[3])):
+        for n in range(len(precios['Date'])):
+            if precios['Date'][n] == pruebas[3][i]:
+                lista_sell.append(n)
+
+    lista_counter_buy = []
+    for i in range(len(lista_buy)):
+        numero = lista_buy[i]
+        counter = 0
+        for n in range(1, 100):
+            dif = precios['Close'][numero] - precios['Open'][numero]
+            if dif > 0:
+                counter += 1
+                numero += 1
+            else:
+                lista_counter_buy.append(counter)
+                break
+
+    lista_counter_sell = []
+    for i in range(len(lista_sell)):
+        numero = lista_sell[i]
+        counter = 0
+        for n in range(1, 100):
+            dif = precios['Open'][numero] - precios['Close'][numero]
+            if dif > 0:
+                counter += 1
+                numero += 1
+            else:
+                lista_counter_sell.append(counter)
+                break
+    return lista_counter_buy, lista_counter_sell
+
+
+def seleccion_estrategia(symbol, estrategia: str):
+    """
+    :param symbol:
+    :param estrategia: Estrategia que se quiere visualizar, de deberan usar las siguientes palabras: 'macd', 'rsi',
+    'promedios', 'smi'
+    :return:
+    """
+
+    if estrategia == 'macd':
+        pruebas = estrategia_macd(symbol)
+    elif estrategia == 'rsi':
+        pruebas = estrategia_rsi(symbol)
+    elif estrategia == 'promedios':
+        pruebas = fechas_precios_orden(symbol, estrategia)
+    elif estrategia == 'smi':
+        pruebas = fechas_precios_orden(symbol, estrategia)
+    else:
+        pass
+    return pruebas
+
+
+def medida_duracion(symbol, estrategia: str):
+    """
+    :param estrategia:Estrategia que se quiere visualizar, de deberan usar las siguientes palabras: 'macd', 'rsi',
+    'promedios', 'smi'
+    :param symbol: Simbolo o ticker que el usuario decidira visualizar.
+    :return: Te devuelve la mediana de las duraciones que ocurrieron en las senales propuestas.
+    """
+
+    pruebas = seleccion_estrategia(symbol, estrategia)
+    lista = contador(symbol, pruebas)
+    med_buy = mediana(lista[0])
+    med_sell = mediana(lista[1])
+
+    return med_buy, med_sell
+
+
+def medida_efectividad(symbol, estrategia: str):
+    """
+    :param estrategia: Estrategia que se quiere visualizar, de deberan usar las siguientes palabras: 'macd', 'rsi',
+    'promedios', 'smi'
+    :param symbol: Simbolo o ticker que el usuario decidira visualizar.
+    :return: Porcentaje tanto para compra como venta, de las señales que ha propuesto el sistema, que tan efectivas.
+    """
+
+    precios = dt.precios.get(symbol)
+    pruebas = seleccion_estrategia(symbol, estrategia)
+    p1 = pruebas[0]
+    p2 = pruebas[1]
+
+    fechas1 = np.where(p1 == precios['Close'])
+    fechas2 = np.where(p2 == precios['Close'])
+    longitud = len(precios['Close'])
+
+    dias_check = 5
+    contadorc = 0
+    contadorv = 0
+
+    rends = [precios['Close'][i + dias_check] - precios['Close'][i] for i in fechas1[0]
+             if (i + dias_check) <= longitud]
+
+    for i in range(len(rends)):
+        if rends[i] > 0:
+            contadorc += 1
+
+    rends2 = [precios['Close'][i] - precios['Close'][i + dias_check] for i in fechas2[0]
+              if (i + dias_check) <= longitud]
+    for i in range(len(rends2)):
+        if rends2[i] > 0:
+            contadorv += 1
+
+    contac = str(round((contadorc / len(rends)) * 100, 2)) + ' %'
+    contav = str(round((contadorv / len(rends2)) * 100, 2)) + ' %'
+
+    return contac, contav
