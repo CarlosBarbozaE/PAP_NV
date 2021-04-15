@@ -11,6 +11,7 @@ import data as dt
 import datetime as dat
 from scipy.signal import argrelextrema
 import statistics as st
+import math
 
 
 class ActionColorMapping(Enum):
@@ -178,7 +179,30 @@ def fechas_precios_orden(symbol, estrategia):
         else:
             fechasv.append(np.nan)
             preciosv.append(np.nan)
-    return preciosc, preciosv, fecha_compra, fecha_venta
+            
+    lista_Buy = [preciosc[i] for i in range(len(preciosc)) if math.isnan(preciosc[i]) is False]
+    lista_Sell = [preciosv[i] for i in range(len(preciosv)) if math.isnan(preciosv[i]) is False]
+
+    senales = []
+    senales.extend(lista_Buy)
+    senales.extend(lista_Sell)
+
+    fechas = []
+    fechas.extend(fecha_compra)
+    fechas.extend(fecha_venta)
+
+    posicion = []
+    for i in range(len(senales)):
+        if senales[i] in lista_Buy:
+            posicion.append('Compra')
+        elif senales[i] in lista_Sell:
+            posicion.append('Venta')
+
+    datos = pd.DataFrame()
+    datos['fechas'] = fechas
+    datos['precios'] = senales
+    datos['posicion'] = posicion
+    return preciosc, preciosv, fecha_compra, fecha_venta, datos
 
 
 # def rsi_manual(symbol):
@@ -498,8 +522,30 @@ def estrategia_macd(symbol):
             #  pass
             Buy.append(np.nan)
             Sell.append(np.nan)
+    
+    lista_Buy = [Buy[i] for i in range(len(Buy)) if math.isnan(Buy[i]) is False]
+    lista_Sell = [Sell[i] for i in range(len(Sell)) if math.isnan(Sell[i]) is False]
 
-    return Buy, Sell, buydate, selldate
+    senales = []
+    senales.extend(lista_Buy)
+    senales.extend(lista_Sell)
+
+    fechas = []
+    fechas.extend(buydate)
+    fechas.extend(selldate)
+
+    posicion = []
+    for i in range(len(senales)):
+        if senales[i] in lista_Buy:
+            posicion.append('Compra')
+        elif senales[i] in lista_Sell:
+            posicion.append('Venta')
+
+    datos = pd.DataFrame()
+    datos['fechas'] = fechas
+    datos['precios'] = senales
+    datos['posicion'] = posicion
+    return Buy, Sell, buydate, selldate, datos
 
     # plt.figure(figsize=(12, 8))
     # plt.plot(df['Date'], df['Close'], label='Close Price', alpha=0.35)
@@ -563,8 +609,30 @@ def estrategia_rsi(symbol):
         else:
             preciocompra.append(np.nan)
             precioventa.append(np.nan)
+            
+    lista_Buy = [preciocompra[i] for i in range(len(preciocompra)) if math.isnan(preciocompra[i]) is False]
+    lista_Sell = [precioventa[i] for i in range(len(precioventa)) if math.isnan(precioventa[i]) is False]
 
-    return preciocompra, precioventa, senalcompra, senalventa
+    senales = []
+    senales.extend(lista_Buy)
+    senales.extend(lista_Sell)
+
+    fechas = []
+    fechas.extend(senalcompra)
+    fechas.extend(senalventa)
+
+    posicion = []
+    for i in range(len(senales)):
+        if senales[i] in lista_Buy:
+            posicion.append('Compra')
+        elif senales[i] in lista_Sell:
+            posicion.append('Venta')
+
+    datos = pd.DataFrame()
+    datos['fechas'] = fechas
+    datos['precios'] = senales
+    datos['posicion'] = posicion
+    return preciocompra, precioventa, senalcompra, senalventa, datos
 
     # plt.figure(figsize=(16, 12))
     # plt.plot(df['Date'], df['Close'], label='Close')
