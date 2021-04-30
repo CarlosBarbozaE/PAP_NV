@@ -12,6 +12,7 @@ import datetime as dat
 from scipy.signal import argrelextrema
 import statistics as st
 import math
+from statistics import stdev as de
 
 
 class ActionColorMapping(Enum):
@@ -780,3 +781,206 @@ def medida_efectividad(symbol, estrategia: str):
     contav = str(round((contadorv / len(rends2)) * 100, 2)) + ' %'
 
     return contac, contav
+
+def medida_claridad(symbol, estrategia: str):
+    """
+    :param symbol: Simbolo o ticker que el usuario decidira visualizar.
+    :param estrategia: Estrategia que se quiere visualizar, de deberan usar las siguientes palabras: 'macd', 'rsi',
+    'promedios', 'smi'
+    :return:
+    """
+    precios = dt.precios.get(symbol)
+    pruebas = seleccion_estrategia(symbol, estrategia)
+    p1 = pruebas[0]
+    p2 = pruebas[1]
+
+    pr = dt.NASDAQ
+    fechas1 = np.where(p1 == precios['Close'])
+    fechas2 = np.where(p2 == precios['Close'])
+
+    p_rend = [(precios['Close'][i] / precios['Close'][i - 1]) - 1 for i in range(1, len(precios['Close']))]
+    b_rend = [(pr['Close'][i] / pr['Close'][i - 1]) - 1 for i in range(1, len(pr['Close']))]
+
+    vol_c = []
+    vol_c_b = []
+    for i in fechas1[0]:
+        lista = []
+        lista_b = []
+        for j in range(0, i):
+            lista.append(p_rend[j])
+            lista_b.append(b_rend[j])
+            if j == i - 1:
+                lista_14 = lista[-14:-1]
+                lista_14.append(lista[-1])
+                lista_b_14 = lista_b[-14:-1]
+                lista_b_14.append(lista_b[-1])
+                vol_c.append(st.stdev(lista_14))
+                vol_c_b.append(st.stdev(lista_b_14))
+
+    vol_v = []
+    vol_v_b = []
+    for i in fechas2[0]:
+        lista = []
+        lista_b = []
+        for j in range(0, i):
+            lista.append(p_rend[j])
+            lista_b.append(b_rend[j])
+            if j == i - 1:
+                lista_14 = lista[-14:-1]
+                lista_14.append(lista[-1])
+                lista_b_14 = lista_b[-14:-1]
+                lista_b_14.append(lista_b[-1])
+                vol_v.append(st.stdev(lista_14))
+                vol_v_b.append(st.stdev(lista_b_14))
+
+    tabla = pd.DataFrame()
+    tabla['Activo'] = vol_c
+    tabla['NASDAQ'] = vol_c_b
+    tabla['Diferencia'] = [vol_c[i] - vol_c_b[i] for i in range(len(tabla['Activo']))]
+    tabla['Medida'] = ['Claridad' if tabla['Diferencia'][i] > 0 else 'Sin claridad'
+                       for i in range(len(tabla['Diferencia']))]
+
+    tabla2 = pd.DataFrame()
+    tabla2['Activo'] = vol_v
+    tabla2['NASDAQ'] = vol_v_b
+    tabla2['Diferencia'] = [vol_v[i] - vol_v_b[i] for i in range(len(tabla2['Activo']))]
+    tabla2['Medida'] = ['Claridad' if tabla2['Diferencia'][i] > 0 else 'Sin claridad'
+                        for i in range(len(tabla2['Diferencia']))]
+
+    return tabla, tabla2
+
+
+def CFA_sharperatio(symbol, estrategia: str):
+    """
+    :param symbol:
+    :param estrategia:
+    :return:
+    """
+    precios = dt.precios.get(symbol)
+    pruebas = seleccion_estrategia(symbol, estrategia)
+    p1 = pruebas[0]
+    p2 = pruebas[1]
+
+    fechas1 = np.where(p1 == precios['Close'])
+    fechas2 = np.where(p2 == precios['Close'])
+    longitud = len(precios['Close'])
+
+    dias_check = 5
+    contadorc = 0
+    contadorv = 0
+
+    rends = [(precios['Close'][i + dias_check] - precios['Close'][i]) * 100 for i in fechas1[0]
+             if (i + dias_check) <= longitud]
+    for i in range(len(rends)):
+        if rends[i] > 0:
+            contadorc += 1
+
+    rends2 = [(precios['Close'][i] - precios['Close'][i + dias_check]) * 100 for i in fechas2[0]
+              if (i + dias_check) <= longitud]
+    for i in range(len(rends2)):
+        if rends2[i] > 0:
+            contadorv += 1
+
+    scompra = [round((rends[i] - (dt.rf / 360 * 5)) / de(rends), 2) for i in range(len(rends))]
+    sventa = [round((rends2[i] - (dt.rf / 360 * 5)) / de(rends2), 2) for i in range(len(rends2))]
+
+    sharpesc = pd.DataFrame()
+    sharpesc['Fechas'] = fechas1[0]
+    sharpesc['Sharpe'] = scompra
+
+    sharpev = pd.DataFrame()
+    sharpev['Fechas'] = fechas2[0]
+    sharpev['Sharpe'] = sventa
+    return sharpesc, sharpev
+
+
+def CFA_trackingerror(symbol, estrategia: str):
+    """
+    :param symbol:
+    :param estrategia:
+    :return:
+    """
+    precios = dt.precios.get(symbol)
+    pruebas = seleccion_estrategia(symbol, estrategia)
+    p1 = pruebas[0]
+    p2 = pruebas[1]
+
+    fechas1 = np.where(p1 == precios['Close'])
+    fechas2 = np.where(p2 == precios['Close'])
+    longitud = len(precios['Close'])
+
+    fechaschidas = []
+    indexamiento = []
+    rends = []
+    bench = []
+    for i in fechas1[0]:
+        for j in range(1, 6):
+            if (i + j) <= longitud:
+                rends.append((precios['Close'][i + j] / precios['Close'][i + (j - 1)]) - 1)
+                bench.append((dt.NASDAQ['Close'][i + j] / dt.NASDAQ['Close'][i + (j - 1)]) - 1)
+                fechaschidas.append(precios['Date'][i + j])
+                indexamiento.append(i)
+
+    hoal = pd.DataFrame()
+    hoal['index'] = indexamiento
+    hoal['fechas'] = fechaschidas
+    hoal['rends'] = rends
+    hoal['Benchmark'] = bench
+    hoal['Diferencia'] = [rends[i] - bench[i] for i in range(len(rends))]
+
+    trade = 0
+    trades = []
+    for j in fechas1[0]:
+        if j == fechas1[0][0]:
+            pass
+        else:
+            trades.append(trade)
+            trade = 0
+        for i in range(len(indexamiento)):
+            if hoal['index'][i] == j:
+                trade += hoal['Diferencia'][i]
+
+    trades.append(trade)
+
+    estra = [trades[i] / 5 for i in range(len(trades))]
+
+    desviacion_trade = de(estra)
+
+    fechaschidas2 = []
+    indexamiento2 = []
+    rends2 = []
+    bench2 = []
+    for i in fechas2[0]:
+        for j in range(1, 6):
+            if (i + j) <= longitud:
+                rends2.append((precios['Close'][i + j] / precios['Close'][i + (j - 1)]) - 1)
+                bench2.append((dt.NASDAQ['Close'][i + j] / dt.NASDAQ['Close'][i + (j - 1)]) - 1)
+                fechaschidas2.append(precios['Date'][i + j])
+                indexamiento2.append(i)
+
+    hoal2 = pd.DataFrame()
+    hoal2['index'] = indexamiento2
+    hoal2['fechas'] = fechaschidas2
+    hoal2['rends'] = rends2
+    hoal2['Benchmark'] = bench2
+    hoal2['Diferencia'] = [rends2[i] - bench2[i] for i in range(len(rends2))]
+
+    trade2 = 0
+    trades2 = []
+    for j in fechas2[0]:
+        if j == fechas2[0][0]:
+            pass
+        else:
+            trades2.append(trade2)
+            trade2 = 0
+        for i in range(len(indexamiento2)):
+            if hoal2['index'][i] == j:
+                trade2 += hoal2['Diferencia'][i]
+
+    trades2.append(trade2)
+
+    estra2 = [trades2[i] / 5 for i in range(len(trades2))]
+
+    desviacion_trade2 = de(estra2)
+
+    return desviacion_trade, desviacion_trade2
