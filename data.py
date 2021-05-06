@@ -13,3 +13,9 @@ for i in tickers:
     pr = pr.drop(['Adj Close', 'Volume'], axis=1)
     pr = pr.reset_index()
     precios[i] = pr
+
+NASDAQ = yf.download('^IXIC', start='2018-01-01', end=now, interval='1d')
+NASDAQ = NASDAQ.drop(['Adj Close', 'Volume'], axis=1)
+NASDAQ = NASDAQ.reset_index()
+
+rf = 0.015
