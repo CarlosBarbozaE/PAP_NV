@@ -737,8 +737,15 @@ def medida_duracion(symbol, estrategia: str):
 
     pruebas = seleccion_estrategia(symbol, estrategia)
     lista = contador(symbol, pruebas)
-    med_buy = mediana(lista[0])
-    med_sell = mediana(lista[1])
+    if len(lista[0]) == 0:
+        med_buy = '-'
+    else:
+        med_buy = mediana(lista[0])
+
+    if len(lista[1]) == 0:
+        med_sell = '-'
+    else:
+        med_sell = mediana(lista[1])
 
     return med_buy, med_sell
 
@@ -777,8 +784,15 @@ def medida_efectividad(symbol, estrategia: str):
         if rends2[i] > 0:
             contadorv += 1
 
-    contac = str(round((contadorc / len(rends)) * 100, 2)) + ' %'
-    contav = str(round((contadorv / len(rends2)) * 100, 2)) + ' %'
+    if len(rends) == 0:
+        contac = '-'
+    else:
+        contac = str(round((contadorc / len(rends)) * 100, 2)) + ' %'
+
+    if len(rends2) == 0:
+        contav = '-'
+    else:
+        contav = str(round((contadorv / len(rends2)) * 100, 2)) + ' %'
 
     return contac, contav
 
@@ -896,9 +910,10 @@ def CFA_sharperatio(symbol, estrategia: str):
 
 def CFA_trackingerror(symbol, estrategia: str):
     """
-    :param symbol:
-    :param estrategia:
-    :return:
+    :param symbol: Simbolo o ticker que el usuario decidira visualizar.
+    :param estrategia: Estrategia que se quiere visualizar, de deberan usar las siguientes palabras: 'macd', 'rsi',
+    'promedios', 'smi'
+    :return: Dos numeros que son las desviaciones estandar con base en las senales de compra y de venta.
     """
     precios = dt.precios.get(symbol)
     pruebas = seleccion_estrategia(symbol, estrategia)
@@ -942,9 +957,11 @@ def CFA_trackingerror(symbol, estrategia: str):
 
     trades.append(trade)
 
-    estra = [trades[i] / 5 for i in range(len(trades))]
-
-    desviacion_trade = de(estra)
+    if len(trades) <= 1:
+        desviacion_trade = '-'
+    else:
+        estra = [trades[i] / 5 for i in range(len(trades))]
+        desviacion_trade = de(estra)
 
     fechaschidas2 = []
     indexamiento2 = []
@@ -979,8 +996,10 @@ def CFA_trackingerror(symbol, estrategia: str):
 
     trades2.append(trade2)
 
-    estra2 = [trades2[i] / 5 for i in range(len(trades2))]
-
-    desviacion_trade2 = de(estra2)
+    if len(trades2) <= 1:
+        desviacion_trade2 = '-'
+    else:
+        estra2 = [trades2[i] / 5 for i in range(len(trades2))]
+        desviacion_trade2 = de(estra2)
 
     return desviacion_trade, desviacion_trade2
